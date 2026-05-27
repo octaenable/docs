@@ -41,6 +41,15 @@
     "directory": "card",
     "groups": [
       {
+        "group": "Quickstarts",
+        "icon": "rocket",
+        "expanded": true,
+        "pages": [
+          "quickstarts/chat-agent-quickstart",
+          "quickstarts/voice-agent-quickstart"
+        ]
+      },
+      {
         "group": "Platform",
         "icon": "layers",
         "expanded": true,
