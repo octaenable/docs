@@ -1,0 +1,287 @@
+---
+title: "Chat Agent Quickstart"
+description: "Build a Confluence-backed customer support chat agent end-to-end — from connector to live, tested agent."
+---
+
+{/* AI-assisted draft | Guidelines version: v2.2 | Source materials: 3.0.3-build-first-agent-howto.md (base), 3.1.0-chat-agent-quickstart-overview.md | Date: 2026-03-16 */}
+
+<Note>
+  **TL;DR** — Build a working chat agent in 7 steps: connector → knowledge base → tools → agent + task → optional router → test → monitor. Each step must complete before the next can start — the order is fixed.
+</Note>
+
+Your customer support team has a Confluence space full of product documentation — FAQs, release notes, and troubleshooting guides. You want to deploy a chat agent that answers tier-1 support questions directly from that content, cites the source document in every response, and hands off to a human only when it cannot resolve the issue.
+
+This guide walks through the full configuration — from connecting your Confluence space to publishing a live, tested agent. For per-field configuration detail, see **How to Configure an Agent**.
+
+---
+
+## Prerequisites
+
+- Business Analyst or Super Admin role in your octonomy tenant
+- Access to a content source — Confluence, SharePoint, S3, or a set of PDFs to upload manually
+- Your implementation team has provisioned your octonomy tenant
+
+---
+
+## Steps
+
+### Step 1: Configure a Connector
+
+*Why first: connectors authenticate the platform to your content source. Knowledge bases and tools cannot be created without a working connector.*
+
+1. Navigate to **Connectors** in the sidebar
+2. Locate the shared connector for your content source (e.g. Confluence, SharePoint)
+3. Confirm the connector status shows active
+
+For Confluence, you will need:
+- Your **Atlassian API access token** (generated in Atlassian → Account Settings → Security → API tokens)
+- The **email address** registered in your Atlassian account
+- The **base URL** of your Confluence domain: `https://[your-domain].atlassian.net`
+
+{/* SCREENSHOT NEEDED: Shared Confluence connector configuration screen with the three credential fields visible */}
+
+<Tip>
+  **Uploading PDFs manually?** Skip to Step 2 — no connector needed.
+</Tip>
+
+**Related guides**
+- How to Choose the Right Connector Type — choose between shared and HTTP connectors
+- How to Set Up a Connector — full setup guide for shared and HTTP connectors
+
+---
+
+### Step 2: Create a Knowledge Base
+
+*Why second: the knowledge base connects your content source and builds the searchable content your agent will draw answers from. It must complete processing before you can create tools.*
+
+1. Navigate to **Knowledge Bases** in the sidebar
+2. Click **Create Knowledge Base**
+3. **Live source path:** select your connector from the dropdown, then choose the space, folder, or bucket to include
+4. **Manual upload path:** upload your PDF files directly — no connector selection required
+5. For Confluence, configure a **scheduled sync** — support documentation updates regularly
+6. Wait for the status to show **Completed** before proceeding
+
+{/* SCREENSHOT NEEDED: Knowledge Base creation screen showing the connector selection dropdown and the manual upload option */}
+
+{/* SCREENSHOT NEEDED: Knowledge Bases list with one knowledge base showing Completed status. Callout: "Completed — ready to use" */}
+
+**Related guides**
+- How to Create a Knowledge Base — full KB creation guide
+
+---
+
+### Step 3: Review the Retrieval Tool
+
+*Why third: when your knowledge base finishes processing, the platform automatically creates a retrieval tool named `kb_[YourKnowledgeBaseName]` in the Tools sidebar. Review the default settings before attaching it to the agent.*
+
+Once your knowledge base shows **Completed**:
+
+1. Navigate to **Tools** in the sidebar
+2. Locate the auto-created tool named `kb_[YourKnowledgeBaseName]`
+3. Open the tool and review the default settings:
+   - **Top K**: default 30 — suitable for most deployments
+   - **Reranking**: off by default — enable if result ordering matters for your use case
+   - **Hybrid Search**: off by default — enable if your knowledge base contains technical terms or product codes that semantic search may miss
+   - **Description**: review the auto-generated description and update it if it is too generic
+4. Save the tool
+
+{/* SCREENSHOT NEEDED: Tools list showing auto-created kb_ tool, with configuration screen visible */}
+
+**Related guides**
+- How to Configure a Retrieval Tool — full configuration guide including Top K, re-ranking, and Hybrid Search
+
+---
+
+### Step 4: Create the Agent and Configure the Task
+
+*Why fourth: create the agent and define how it behaves, using the tools and knowledge base you just configured.*
+
+#### Step 4a: Create the Agent
+
+1. Navigate to **Agents** in the sidebar
+2. Click **Create Agent** and select **Chat** as the agent type
+3. Enter the **Chat Bot Name** — the name users see in the chat interface
+4. Enter **Preview Text** — the greeting displayed before a conversation starts (*required before publishing*)
+5. Select the **Language** for the chat interface
+6. Leave all other settings at their defaults for a standard Knowledge Expert deployment
+7. Click **Save**
+
+{/* SCREENSHOT NEEDED: Agent creation screen — Chat Bot Name, Preview Text, Language fields visible */}
+
+<Note>
+  For per-field detail on all agent settings — model selection, temperature, accessibility, styling, and context variables — see **How to Configure an Agent**.
+</Note>
+
+#### Step 4b: Configure the Task Prompt
+
+After saving the agent, open the task configuration screen. The task prompt is the agent's operating manual — it defines role, tone, what to do on each query, response format, and escalation rules.
+
+A well-structured task prompt has five sections:
+
+**1. Role** — who the agent is:
+
+```
+## Role
+You are a Knowledge Expert assistant for [your company]. Your role is to answer
+frequently asked questions accurately and efficiently, using only the information
+available in your connected knowledge base.
+
+{{/productdocumentationtest@knowledgebase-knowledge-base-tool in Knowledge Base}}
+
+You are not a general-purpose assistant. You specialise in the content your
+knowledge base contains. You do not speculate or answer from general knowledge.
+```
+
+**2. Tone** — how the agent communicates:
+
+```
+## Tone
+- Clear, direct, and professional.
+- Friendly but not casual — avoid filler phrases like "Great question!" or "Absolutely!".
+- Concise: one well-constructed answer is better than three hedged paragraphs.
+- Confident when the knowledge base has a clear answer; transparent when it does not.
+```
+
+**3. Task** — what to do on each query:
+
+```
+## Task
+When a user submits a question:
+1. Search the connected knowledge base for relevant information.
+   Call {{/productenablementTest@confluence-kms-tool in Confluence}} to do so.
+2. Synthesize the answer from retrieved content — do not paraphrase beyond
+   what the source supports.
+3. Always cite the source document or page name at the end of your response,
+   formatted as: *Source: [document or page name]*.
+4. If multiple sources contribute, list all of them.
+5. If the answer requires the user to take an action, include that step explicitly.
+```
+
+**4. Response Format** — how to structure replies:
+
+```
+## Response Format
+- Lead with the direct answer.
+- Use bullet points for multi-step instructions or lists of options.
+- Use plain prose for explanations.
+- Keep responses under 200 words unless the question genuinely requires more detail.
+```
+
+**5. Boundaries and Edge Cases** — what to do when things fall outside scope:
+
+```
+## Boundaries and Edge Cases
+
+Out of scope: If a user asks a question your knowledge base does not cover, respond:
+"I don't have information on that in my current knowledge base.
+For this question, please contact [team or channel]."
+
+Ambiguous questions: Ask one clarifying question before searching. Do not guess intent.
+
+Conflicting sources: Surface the conflict rather than choosing silently.
+"I found two sources with different information. [Source A] states X. [Source B] states Y.
+Please verify with [team] to confirm which applies."
+
+Escalation: For [defined triggers — billing disputes, legal queries, urgent failures],
+respond: "This needs to be handled by [team]. Please [escalation path]."
+```
+
+<Warning>
+  **Tool reference syntax:** Use the `/` command in the prompt editor to insert tool references. Type `/`, select **Knowledge base** from the menu, then select your tool from the list that appears. octonomy inserts the reference automatically. Do not type or edit the reference manually — any change breaks execution.
+</Warning>
+
+{/* SCREENSHOT NEEDED: Task prompt editor showing a complete prompt with tool reference inserted via / command */}
+
+**Related guides**
+- How to Configure an Agent — per-field reference for all task configuration options
+
+---
+
+### Step 5: Add a Router Agent *(Optional)*
+
+*Use only when you have two or more specialist agents and want users to interact through a single entry point.*
+
+A **router agent** acts as an intake coordinator — it reads the user's question, identifies the intent, and hands off to the right specialist agent. Routing behaviour is defined in the router's task prompt using the `@` command to reference specialist agents.
+
+**Example router prompt:**
+
+```
+## Role
+You are a customer support router. Your only job is to identify the user's
+intent and hand off to the right specialist agent.
+
+- IT issues (software, hardware, access, passwords) → @IT-Support-Agent
+- Product questions (features, pricing, compatibility) → @Product-Agent
+- Order and billing queries → @Billing-Agent
+
+Always hand off. Never answer questions directly.
+If intent is unclear, ask one clarifying question before routing.
+```
+
+<Note>
+  Keep the router prompt short and single-purpose. The specialist agents handle tone, scope, edge cases, and response format — these belong in the specialist prompts, not the router.
+
+  **Single-agent setup:** skip this step.
+</Note>
+
+{/* SCREENSHOT NEEDED: Router task prompt editor showing @ agent references */}
+
+**Related guides**
+- Router Agent Quickstart — full router configuration guide
+
+---
+
+### Step 6: Test the Agent
+
+*Why before publishing: a chat test confirms end-to-end response quality; a Node Browser check confirms the retrieval layer independently.*
+
+Test two layers — a problem at the retrieval layer cannot be fixed by a better prompt.
+
+#### Layer 1: Chat Response Test
+
+Copy the agent URL from the **Agents** menu and open it in your browser. Type a question your users would actually ask.
+
+A well-configured agent returns:
+- A direct, cited answer referencing the source document
+- Correct tone and scope as defined in the task prompt
+- Appropriate handling of edge cases (out-of-scope questions, ambiguous queries)
+
+{/* SCREENSHOT NEEDED: Agent chat interface showing a sample question and cited response. Callout on the citation: "Citations confirm your knowledge base is connected" */}
+
+#### Layer 2: Node Browser (Retrieval Layer)
+
+Navigate to **Knowledge Bases**, open your knowledge base, and go to the **Node Browser**. Run the same question in the **Search** tab.
+
+Confirm the correct nodes surface. If the wrong nodes appear here, the agent will give wrong answers regardless of how well the task prompt is written — the problem is at the retrieval layer, not the prompt.
+
+{/* SCREENSHOT NEEDED: Node Browser Search tab showing results for a sample question */}
+
+---
+
+### Step 7: Monitor and Refine
+
+*Why after publishing: performance data only accumulates once the agent is live.*
+
+Use **Insights** and **Conversations** together as a continuous improvement cycle:
+
+**Insights** gives you the quantitative overview — resolution rate, automation rate, average resolution time, and top topics. Use it for weekly performance reviews.
+
+**Conversations** gives you the qualitative detail — full transcripts with agent reasoning steps, tool call records, and citations. Use it to read exactly what went wrong and confirm root causes before making changes.
+
+The improvement cycle runs: **Insights** (what metric is off?) → **Conversations** (why?) → **Action** (update KB content, refine prompt, or fix tool configuration).
+
+{/* SCREENSHOT NEEDED: Insights Executive Dashboard showing key metrics — resolution rate, automation rate, response time */}
+
+**Related guides**
+- How to Use the Insights Dashboard — full guide to all four dashboard views
+- How to Review Conversations — reading transcripts and identifying improvement opportunities
+
+---
+
+## Next Steps
+
+- **How to Configure an Agent** — per-field reference for all agent settings, task configuration, and publishing options
+- **How to Set Up a Connector** — detailed connector setup including HTTP connectors and authentication methods
+- **How to Create a Knowledge Base** — full KB creation guide including JSON config and version management
+- **How to Configure a Retrieval Tool** — retrieval configuration including Top K, re-ranking, and Hybrid Search
+- **Router Agent Quickstart** — configure a router for multi-specialist agent deployments
